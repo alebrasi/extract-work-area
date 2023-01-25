@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 matplotlib.use('TkAgg')
 
-img_name = '11'
+img_name = '509R'
 img_path = f'{img_name}.jpg'
 
 border = 20
@@ -33,44 +33,14 @@ plt.show()
 black_thr = [(0, 0, 0), (255, 255, 100)]
 white_thr = [(0, 0, 120), (255, 255, 255)]
 thr = cv.inRange(hsv, black_thr[0], black_thr[1])
-#plt.imshow(thr, cmap='gray')
-#plt.show()
-"""
-blur = cv.GaussianBlur(hsv, (11,11), 20)
-thr = cv.inRange(hsv, (9, 12, 120), (14, 20, 140))
-thr2 = cv.inRange(hsv, (6, 15, 120), (32, 165, 220))
-thr = cv.bitwise_or(thr, thr2)
-#ret3,thr = cv.threshold(blur,0,255,cv.THRESH_BINARY+cv.THRESH_OTSU)
-plt.imshow(thr, cmap='gray')
-plt.show()
-plt.imshow(thr2, cmap='gray')
-plt.show()
-#plt.imshow(thr, cmap='gray')
-#plt.show()
 
-#plt.imshow(cv.medianBlur(thr, 21))
-
-ker = cv.getStructuringElement(cv.MORPH_ELLIPSE, (5, 5))
-thr = cv.morphologyEx(thr, cv.MORPH_OPEN, ker)
-plt.imshow(thr, cmap='gray')
-plt.show()
 
 ker = cv.getStructuringElement(cv.MORPH_ELLIPSE, (20, 20))
 thr = cv.morphologyEx(thr, cv.MORPH_CLOSE, ker)
-plt.imshow(thr, cmap='gray')
-plt.show()
-"""
-
-#dx = cv.Sobel()
-ker = cv.getStructuringElement(cv.MORPH_ELLIPSE, (20, 20))
-thr = cv.morphologyEx(thr, cv.MORPH_CLOSE, ker)
-#plt.imshow(thr, cmap='gray')
-#plt.show()
 
 cnts, hierarchy = cv.findContours(thr, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
 gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
 gray = cv.cvtColor(gray, cv.COLOR_GRAY2BGR)
-#print(hierarchy[:10])
 tmp_cnt = []
 for i, cnt in enumerate(hierarchy[0]):
     if cnt[3] == -1:
@@ -78,10 +48,9 @@ for i, cnt in enumerate(hierarchy[0]):
         tmp_cnt.append([i, perimeter])
 
 idx = max(tmp_cnt, key=lambda c: c[1])[0]
-print(idx)
 epsilon = 0.1*cv.arcLength(cnts[idx],True)
 approx = cv.approxPolyDP(cnts[idx],epsilon,True)
-cv.drawContours(gray, [approx], 0, (0,255,0), 3)
+#cv.drawContours(gray, [approx], 0, (0,255,0), 3)
 #cv.drawContours(gray, cnts[idx], -1, (0,255,0), 3)
 #plt.imshow(gray)
 #plt.show()
@@ -91,14 +60,16 @@ if len(approx) != 4:
 
 points = [ point[0] for point in approx ]
 
-#upper_most = min(points, key=lambda p: p[1])
-points.sort(key=lambda p: p[1])
-bottom_most = points[0]
-upper_most = points[-1]
-print(bottom_most)
-print(upper_most)
+top_left, bottom_left, bottom_right, top_right = points[:4]
 
-x, y = upper_most
-#w, h = 
-plt.imshow(img[upper_most, bottom_most])
-plt.show()
+x, y = 0, 0
+h, w = 0, 0
+
+x1 = top_left[0] if top_left[0] > bottom_left[0] else bottom_left[0]
+y1 = top_left[1] if top_left[1] < top_right[1] else top_right[1]
+
+x2 = top_right[0] if top_right[0] < bottom_right[0] else bottom_right[0]
+y2 = bottom_left[1] if bottom_left[1] < bottom_right[1] else bottom_right[1]
+
+cropped = img[y1:y2, x1:x2]
+
