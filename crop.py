@@ -3,6 +3,67 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 import math
+from collections import defaultdict
+
+def segment_by_angle_kmeans(lines, k=2, **kwargs):
+    """Groups lines based on angle with k-means.
+
+    Uses k-means on the coordinates of the angle on the unit circle 
+    to segment `k` angles inside `lines`.
+    """
+
+    # Define criteria = (type, max_iter, epsilon)
+    default_criteria_type = cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER
+    criteria = kwargs.get('criteria', (default_criteria_type, 10, 1.0))
+    flags = kwargs.get('flags', cv.KMEANS_RANDOM_CENTERS)
+    attempts = kwargs.get('attempts', 10)
+
+    # returns angles in [0, pi] in radians
+    angles = np.array([line[0][1] for line in lines])
+    # multiply the angles by two and find coordinates of that angle
+    pts = np.array([[np.cos(2*angle), np.sin(2*angle)]
+                    for angle in angles], dtype=np.float32)
+
+    # run kmeans on the coords
+    labels, centers = cv.kmeans(pts, k, None, criteria, attempts, flags)[1:]
+    labels = labels.reshape(-1)  # transpose to row vec
+
+    # segment lines based on their kmeans label
+    segmented = defaultdict(list)
+    for i, line in enumerate(lines):
+        segmented[labels[i]].append(line)
+    segmented = list(segmented.values())
+    return segmented
+
+def intersection(line1, line2):
+    """Finds the intersection of two lines given in Hesse normal form.
+
+    Returns closest integer pixel locations.
+    See https://stackoverflow.com/a/383527/5087436
+    """
+    rho1, theta1 = line1[0]
+    rho2, theta2 = line2[0]
+    A = np.array([
+        [np.cos(theta1), np.sin(theta1)],
+        [np.cos(theta2), np.sin(theta2)]
+    ])
+    b = np.array([[rho1], [rho2]])
+    x0, y0 = np.linalg.solve(A, b)
+    x0, y0 = int(np.round(x0)), int(np.round(y0))
+    return [[x0, y0]]
+
+
+def segmented_intersections(lines):
+    """Finds the intersections between groups of lines."""
+
+    intersections = []
+    for i, group in enumerate(lines[:-1]):
+        for next_group in lines[i+1:]:
+            for line1 in group:
+                for line2 in next_group:
+                    intersections.append(intersection(line1, line2)) 
+
+    return intersections
 
 # TODO: Fare una funzione più corta
 # https://gist.github.com/flashlib/e8261539915426866ae910d55a3f9959
@@ -90,16 +151,18 @@ def remove_lateral_white_bands(img):
 
 matplotlib.use('TkAgg')
 
-img_name = '509'
+img_name = '509R'
 img_path = f'{img_name}.jpg'
 
 border = 20
+resize_offset = 0
+img_size = 512
 
 img = cv.imread(img_path)
 
 h, w = img.shape[:2]
 
-img = cv.copyMakeBorder(img, border, border, border, border, cv.BORDER_CONSTANT, None, (255, 255, 255))
+#img = cv.copyMakeBorder(img, border, border, border, border, cv.BORDER_CONSTANT, None, (255, 255, 255))
 hsv = cv.cvtColor(img, cv.COLOR_BGR2HSV)
 
 h,s,v = cv.split(hsv)
@@ -156,6 +219,7 @@ cropped = cropped[:h-offset_y, ...]
 cropped = cropped[:, :w-offset_x]
 cropped = cropped[:, offset_x:]
 
+
 cropped_bgr = img[y1:y2, x1:x2]
 cropped_bgr = cropped_bgr[:h-offset_y, ...]
 cropped_bgr = cropped_bgr[:, :w-offset_x]
@@ -163,43 +227,35 @@ cropped_bgr = cropped_bgr[:, offset_x:]
 
 
 blur = cv.GaussianBlur(cropped, (31, 31), 60)
-#plt.imshow(blur, cmap='gray')
-#plt.show()
 
-_, mask = cv.threshold(blur, 75, 255, cv.THRESH_BINARY)
+
+_, back_mask = cv.threshold(blur, 75, 255, cv.THRESH_BINARY)
 ker = cv.getStructuringElement(cv.MORPH_ELLIPSE, (25, 25))
-mask = cv.morphologyEx(mask, cv.MORPH_CLOSE, ker)
+back_mask = cv.morphologyEx(back_mask, cv.MORPH_CLOSE, ker)
 
-masked = cv.bitwise_and(cropped_bgr, cropped_bgr, mask=mask)
+band_mask = remove_lateral_white_bands(cropped_bgr)
 
-mask = remove_lateral_white_bands(masked)
+mask = back_mask & band_mask
 
-print(masked.shape)
-print(mask.shape)
+ker = cv.getStructuringElement(cv.MORPH_ELLIPSE, (50, 50))
+mask = cv.morphologyEx(mask, cv.MORPH_OPEN, ker)
 
-masked = cv.bitwise_and(masked, masked, mask=mask)
-plt.imshow(masked)
-plt.show()
-
-"""
 # ----- Morphological gradient -------
 gradient_ker = cv.getStructuringElement(cv.MORPH_ELLIPSE, (3,3))
 gradient = cv.morphologyEx(mask, cv.MORPH_GRADIENT, gradient_ker)
 plt.imshow(gradient, cmap='gray')
 plt.show()
 # -------------------------------------
-"""
 
 """
-cropped = cv.pyrDown(cropped)
-cropped = cv.pyrUp(cropped)
-
-dst = cv.Canny(cropped, 90, 160)
-plt.imshow(dst, cmap='gray')
+masked = cv.bitwise_and(cropped_bgr, cropped_bgr, mask=mask)
+plt.imshow(cropped_bgr)
 plt.show()
+"""
 
+#dst = cv.Canny(cropped, 90, 160)
+dst = gradient
 cdst = cv.cvtColor(dst, cv.COLOR_GRAY2BGR)
-#cdst = masked
 
 lines = cv.HoughLines(dst, 1, np.pi / 180, 200, None, 0, 0)
 if lines is not None:
@@ -216,4 +272,38 @@ if lines is not None:
 
 plt.imshow(cdst, cmap='gray')
 plt.show()
-"""
+
+# ------------- Intersections --------------
+#https://stackoverflow.com/questions/46565975/find-intersection-point-of-two-lines-drawn-using-houghlines-opencv
+segmented = segment_by_angle_kmeans(lines)
+intersections = segmented_intersections(segmented)
+points = np.array([ pt[0] for pt in intersections ])
+for pt in intersections:
+    pt = pt[0]
+    x, y = pt
+    cdst[y, x] = (0,255,0)
+
+rect = cv.minAreaRect(points)
+box = cv.boxPoints(rect)
+center, _, angle = rect
+box = np.int0(box)
+
+cv.drawContours(cdst,[box],0,(255,0,0),2)
+cdst = cropped_bgr
+if angle < 50:
+    h, w = cropped_bgr.shape[:2]
+    rot_m = cv.getRotationMatrix2D(center, angle, 1.0)
+    cdst = cv.warpAffine(cropped_bgr, rot_m, (w, h))
+    
+min_y = min(box, key=lambda p: p[1])[1] + resize_offset
+max_y = max(box, key=lambda p: p[1])[1] - resize_offset
+min_x = min(box, key=lambda p: p[0])[0] + resize_offset
+max_x = max(box, key=lambda p: p[0])[0] - resize_offset
+
+cdst = cdst[min_y:max_y, min_x:max_x, ...]
+plt.imshow(cdst)
+plt.show()
+cdst = cv.resize(cdst, (img_size, img_size))
+plt.imshow(cdst)
+plt.show()
+# ---------------------------------------
