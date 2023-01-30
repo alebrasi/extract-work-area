@@ -64,6 +64,8 @@ def crop_img(img,
     cropped_bgr = img
     if not pre_cropped:
         # --------------- Black board thresholding and cropping -----------------
+        gray = cv.pyrDown(gray)
+        gray = cv.pyrUp(gray)
         _, thr = cv.threshold(gray, 100, 255, cv.THRESH_BINARY_INV)
 
         ker = cv.getStructuringElement(cv.MORPH_ELLIPSE, (20, 20))
@@ -77,14 +79,23 @@ def crop_img(img,
                 tmp_cnt.append([i, perimeter])
 
         idx = max(tmp_cnt, key=lambda c: c[1])[0]
-        epsilon = 0.1*cv.arcLength(cnts[idx],True)
-        approx = cv.approxPolyDP(cnts[idx],epsilon,True)
 
+        min_rect = cv.minAreaRect(cnts[idx])
+        box = np.int0(cv.boxPoints(min_rect))
+        cv.drawContours(img, [box], 0, (255, 0, 0), 3)
+        points = order_points(box)
+
+        """
+        epsilon = 0.12*cv.arcLength(cnts[idx],True)
+        approx = cv.approxPolyDP(cnts[idx],epsilon,True)        
         if len(approx) != 4:
             print('Black board not found')
 
+        approx = np.int0(approx)
         points = [ point[0] for point in approx ]
-        points = order_points(np.array(points))
+        print(points)
+        points = order_points(points)
+        """
 
         top_left, top_right, bottom_right, bottom_left = points[:4]
 
@@ -168,8 +179,9 @@ def crop_img(img,
 if __name__ == '__main__':
     matplotlib.use('TkAgg')
 
-    img_name = '508'
+    img_name = '508R'
     img_path = f'{img_name}.jpg'
+    #img_path = '/home/alebrasi/Documents/tesi/Dataset/sessioni_1024/1024/Sessione 1/Sessione 1.1/21R.jpg'
     border = 20
     resize_offset = 0
     img_size = 512
